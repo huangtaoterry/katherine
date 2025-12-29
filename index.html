@@ -2,445 +2,667 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Ultimate Christmas 3D - Final</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>10年 - 每日可视化</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Cinzel', serif; }
+        /* Apple 风格字体栈 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "PingFang SC", "Noto Sans SC", sans-serif;
+            background-color: #f5f5f7; /* Apple 浅灰背景 */
+            color: #1d1d1f;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .mono-font {
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+        }
+
+        /* 隐藏滚动条但保留功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 卡片样式 */
+        .year-card {
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+            padding: 24px;
+            margin-bottom: 32px;
+            border: 1px solid rgba(0,0,0,0.04);
+        }
+
+        /* 核心布局：GitHub 风格热力图 */
+        .heatmap-grid {
+            display: grid;
+            grid-template-rows: repeat(7, 12px);
+            grid-auto-flow: column; 
+            gap: 3px;
+            width: max-content;
+            padding: 2px;
+        }
+
+        /* 方格样式 */
+        .day-box {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            cursor: pointer;
+            box-sizing: border-box;
+            transition: transform 0.1s ease, border-color 0.2s;
+            position: relative;
+        }
+
+        /* 状态颜色 */
+        .day-future { background-color: #ebedf0; }
+        .day-past { background-color: #4cd964; opacity: 0.7; }
         
-        /* 启动遮罩 */
-        #overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
+        .day-today {
+            background-color: #0071e3;
+            transform: scale(1.3);
+            box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.3);
+            z-index: 10;
+            border-radius: 3px;
+            border: none !important;
+        }
+
+        .day-special { background-color: #ff9500; }
+        
+        /* 有日记的标记：底部紫色边框 */
+        .day-has-diary {
+            border-bottom: 2px solid #8b5cf6 !important; /* Purple border */
+        }
+        /* 如果既是Special又有Diary，确保都可见 */
+        .day-special.day-has-diary {
+            box-shadow: 0 0 0 1px #8b5cf6;
+        }
+
+        .day-box:hover {
+            transform: scale(1.8);
+            z-index: 50;
+            border: 1px solid rgba(0,0,0,0.5);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        /* 月份边界虚线 */
+        .month-border-top { border-top: 1px dashed #a1a1aa; margin-top: -1px; }
+        .month-border-bottom { border-bottom: 1px dashed #a1a1aa; }
+        .month-border-left { border-left: 1px dashed #a1a1aa; margin-left: -1px; }
+
+        /* Tooltip */
+        .custom-tooltip {
+            position: absolute;
+            background: rgba(29, 29, 31, 0.95);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            pointer-events: none;
+            white-space: nowrap;
             z-index: 100;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            transition: opacity 0.8s ease-out;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            backdrop-filter: blur(4px);
         }
-        .loader-text {
-            color: #d4af37; font-size: 24px; letter-spacing: 4px; margin-bottom: 30px;
-            text-shadow: 0 0 15px rgba(212, 175, 55, 0.5);
-        }
-        #start-btn {
-            padding: 15px 40px; border: 1px solid rgba(255,255,255,0.3); color: #fff;
-            background: rgba(255,255,255,0.05); font-family: 'Cinzel'; font-size: 18px; 
-            cursor: pointer; transition: all 0.4s; opacity: 0.3; pointer-events: none;
-            text-transform: uppercase; border-radius: 2px; letter-spacing: 2px;
-            backdrop-filter: blur(5px);
-        }
-        #start-btn.ready { opacity: 1; pointer-events: auto; border-color: #d4af37; }
-        #start-btn:hover { background: #d4af37; color: #000; box-shadow: 0 0 30px #d4af37; }
 
-        /* UI */
-        #ui-layer {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; z-index: 10;
-            display: flex; flex-direction: column; align-items: center; padding-top: 30px;
+        /* 弹窗 Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
         }
-        h1 {
-            color: #FFF; font-size: 3rem; margin: 0; font-weight: 400; letter-spacing: 5px;
-            background: -webkit-linear-gradient(#eee, #333);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            text-shadow: 0 0 20px rgba(255,255,255,0.2);
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
         }
-        .status-container {
-            position: fixed;left: 16px;bottom: 16px; background: rgba(0, 0, 0, 0.6); padding: 10px 20px;
-            border-radius: 30px; border: 1px solid #333; backdrop-filter: blur(5px); text-align: center;
+        .modal-card {
+            background: white;
+            width: 90%;
+            max-width: 400px;
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
         }
-        .status-text { color: #888; font-size: 16px; letter-spacing: 1px; font-weight: bold; }
-        .guide-text { color: #555; font-size: 12px; margin-top: 5px; font-family: sans-serif; }
+        .modal-overlay.active .modal-card {
+            transform: scale(1);
+        }
 
-        /* 摄像头预览 */
-        #camera-container {
-            position: absolute; bottom: 20px; right: 20px; width: 200px; height: 150px;
-            z-index: 20; border-radius: 10px; overflow: hidden; border: 2px solid #333;
-            transform: scaleX(-1); background: #000; transition: border-color 0.3s;
+        /* 按钮风格 */
+        .apple-btn {
+            background-color: #0071e3;
+            color: white;
+            border-radius: 980px;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            border: none;
+            box-shadow: 0 2px 5px rgba(0, 113, 227, 0.2);
         }
-        #camera-container.active { border-color: #00ff00; box-shadow: 0 0 15px rgba(0,255,0,0.3); }
-        #video-input, #output-canvas { width: 100%; height: 100%; object-fit: cover; position: absolute; top:0; left:0;}
-
-        /* 隐藏的音频标签 */
-        #bg-music { display: none; }
+        .apple-btn:hover {
+            background-color: #0077ed;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 113, 227, 0.4);
+        }
+        
+        /* 布局调整 */
+        .week-labels {
+            display: grid;
+            grid-template-rows: repeat(7, 12px);
+            gap: 3px;
+            margin-right: 8px;
+            text-align: right;
+            padding-top: 2px;
+        }
+        .day-label {
+            font-size: 9px;
+            color: #86868b;
+            line-height: 12px;
+            height: 12px;
+        }
+        .month-labels {
+            position: relative;
+            height: 20px;
+            margin-bottom: 4px;
+        }
+        .month-label {
+            position: absolute;
+            font-size: 11px;
+            color: #86868b;
+            top: 0;
+            font-family: -apple-system, sans-serif;
+            font-weight: 500;
+        }
     </style>
-    
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
-        }
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
 </head>
-<body>
+<body class="min-h-screen flex flex-col items-center">
 
-    <audio id="bg-music" loop>
-        <source src="music.mp3" type="audio/mpeg">
-        <source src="music.wav" type="audio/wav">
-        </audio>
+    <!-- 提示框 -->
+    <div id="tooltip" class="custom-tooltip"></div>
 
-    <div id="overlay">
-        <div class="loader-text" id="loader-msg">INITIALIZING SYSTEM...</div>
-        <button id="start-btn" onclick="startApp()">START</button>
-    </div>
-
-    <div id="ui-layer">
-        <h1>For Katherine</h1>
-        <div class="status-container">
-            <div class="status-text" id="status-display">WAITING FOR CAMERA...</div>
-            <div class="guide-text">🖐 OPEN: SCATTER | ✊ FIST: TREE | 👌 PINCH: ZOOM</div>
+    <!-- 日记弹窗 Modal -->
+    <div id="diary-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="modal-date-title" class="text-xl font-bold text-gray-900">Date</h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <p id="modal-day-info" class="text-xs text-gray-500 mb-4">Day X of Journey</p>
+            
+            <textarea id="diary-input" class="w-full h-32 p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#0071e3] focus:border-transparent outline-none resize-none text-sm bg-gray-50 text-gray-800" placeholder="Write something about this day..."></textarea>
+            
+            <div class="flex justify-end gap-3 mt-6">
+                <button onclick="closeModal()" class="px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition">Cancel</button>
+                <button onclick="saveDiaryEntry()" class="px-6 py-2 text-sm bg-[#0071e3] text-white rounded-lg hover:bg-[#0077ed] transition shadow-md font-medium">Save Note</button>
+            </div>
         </div>
     </div>
 
-    <div id="camera-container">
-        <video id="video-input" playsinline></video>
-        <canvas id="output-canvas"></canvas>
-    </div>
+    <!-- 顶部导航 -->
+    <nav class="w-full bg-white/90 backdrop-blur-md border-b border-gray-200 sticky top-0 z-40 transition-all duration-300">
+        <div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-end">
+            <div class="pb-1">
+                <h1 class="text-2xl font-bold tracking-tight text-gray-900">10 Years Journey</h1>
+                <p class="text-xs text-gray-500 mt-1 font-medium" id="date-range-display">Loading...</p>
+            </div>
+            
+            <div class="flex items-end gap-10">
+                <!-- 进度模块 -->
+                <div class="text-right flex flex-col items-end">
+                    <div class="text-[11px] text-gray-400 uppercase font-bold tracking-wide mb-1">Progress</div>
+                    <div class="flex items-baseline gap-2">
+                        <span id="percentage-display" class="font-bold mono-font text-3xl text-[#0071e3] tracking-tighter">0.00%</span>
+                    </div>
+                    <div class="w-32 h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
+                        <div id="progress-bar-visual" class="h-full bg-[#0071e3] rounded-full transition-all duration-1000" style="width: 0%"></div>
+                    </div>
+                </div>
 
-    <div id="canvas-container"></div>
+                <!-- 天数模块 -->
+                <div class="text-right flex flex-col items-end">
+                    <div class="text-[11px] text-gray-400 uppercase font-bold tracking-wide mb-1">Current Day</div>
+                    <div class="font-bold mono-font text-3xl text-gray-800 tracking-tighter">
+                        <span id="current-day-num">0</span>
+                    </div>
+                    <div class="text-[10px] text-gray-400 mt-2 font-medium">
+                        / <span id="total-days-num">3652</span> Days
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-        import { Reflector } from 'three/addons/objects/Reflector.js';
-
-        const CONFIG = {
-            particleCount: 1200, 
-            treeHeight: 1200,
-            treeRadius: 450,
-            colors: [0xFFD700, 0xE5E4E2, 0xC41E3A, 0x002FA7, 0x50C878],
-            emojis: ['🎄', '🎅', '🎁', '❄️', '🦌', '🔔', '✨'],
-            // 优先加载这些本地文件
-            localImages: ['img1.jpg', 'img2.jpg', 'img3.jpg'],
-            // 网络备用图（万一本地加载失败）
-            backupImages: [
-                'https://images.unsplash.com/photo-1543589077-47d81606c1bf?auto=format&fit=crop&w=400&q=80',
-                'https://images.unsplash.com/photo-1512389142860-9c449e58a543?auto=format&fit=crop&w=400&q=80',
-                'https://images.unsplash.com/photo-1576618148400-f54bed99fcf8?auto=format&fit=crop&w=400&q=80'
-            ]
-        };
-
-        let scene, camera, renderer, composer, controls;
-        let objects = []; 
-        let targets = { tree: [], scatter: [] };
-        let textures = []; 
-        let currentMode = 'TREE'; 
+    <!-- 主内容区域 -->
+    <main class="w-full max-w-6xl px-6 py-8 flex-1">
         
-        const group = new THREE.Group();
-        const loaderMsg = document.getElementById('loader-msg');
-        const startBtn = document.getElementById('start-btn');
-        const statusDisplay = document.getElementById('status-display');
-        const camContainer = document.getElementById('camera-container');
+        <!-- 图例 -->
+        <div class="flex justify-end gap-6 text-xs text-gray-500 mb-8 px-2 font-medium">
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-[2px] bg-[#ebedf0] border border-dashed border-gray-300"></div> Future</div>
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-[2px] bg-[#4cd964] opacity-70"></div> Past</div>
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-[2px] bg-[#0071e3] shadow-sm"></div> Today</div>
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-[2px] bg-[#ff9500]"></div> Special</div>
+            <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-[2px] border-b-2 border-[#8b5cf6]"></div> Note</div>
+        </div>
 
-        // Emoji 纹理
-        function createEmojiTexture(emoji) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 256; canvas.height = 256;
-            const ctx = canvas.getContext('2d');
-            ctx.font = '180px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = 'white';
-            ctx.fillText(emoji, 128, 140);
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.colorSpace = THREE.SRGBColorSpace;
-            return tex;
-        }
+        <!-- 年份容器 -->
+        <div id="years-container">
+            <!-- JS 动态生成 -->
+        </div>
 
-        // --- 修复：更强壮的资源加载逻辑 ---
-        async function preloadAssets() {
-            const texLoader = new THREE.TextureLoader();
-            loaderMsg.innerText = "LOADING PHOTOS...";
+    </main>
 
-            // 辅助函数：尝试加载图片，失败则返回null
-            const loadTexture = (src) => new Promise((resolve) => {
-                texLoader.load(
-                    src, 
-                    (t) => {
-                        console.log(`Loaded: ${src}`);
-                        resolve(t);
-                    }, 
-                    undefined, 
-                    (err) => {
-                        console.warn(`Failed to load ${src}. Check file path or CORS.`);
-                        resolve(null);
-                    }
-                );
-            });
-
-            // 1. 尝试加载本地图片
-            let loadedTextures = await Promise.all(CONFIG.localImages.map(src => loadTexture(src)));
+    <!-- 底部控制栏 -->
+    <footer class="w-full bg-white border-t border-gray-200 py-8 mt-auto">
+        <div class="max-w-6xl mx-auto px-6 flex justify-between items-center">
+            <div class="text-xs text-gray-500 max-w-2xl leading-relaxed italic font-serif">
+                "Dearest Katherine: I promise that no matter what changes over the next ten years, I will keep choosing you—steadily, faithfully, and with all my heart—until the day we finally stay together."
+            </div>
             
-            // 2. 过滤掉加载失败的 (null)
-            textures = loadedTextures.filter(t => t !== null);
+            <button onclick="toggleTodaySpecial()" id="star-btn" class="apple-btn flex items-center gap-2 shrink-0 ml-4">
+                <i class="fas fa-star text-xs"></i> 标记今天为纪念日
+            </button>
+        </div>
+    </footer>
 
-            // 3. 如果本地图片都没加载到 (比如因为CORS或者文件不存在)，使用网络备用图
-            if (textures.length === 0) {
-                console.log("Using backup images...");
-                loadedTextures = await Promise.all(CONFIG.backupImages.map(src => loadTexture(src)));
-                textures = loadedTextures.filter(t => t !== null);
-            }
-
-            if (textures.length > 0) {
-                textures.forEach(t => t.colorSpace = THREE.SRGBColorSpace);
-                loaderMsg.innerText = `Merry Christmas!`;
-            } else {
-                loaderMsg.innerText = "Merry Christmas!";
-            }
-
-            // 初始化摄像头
-            initMediaPipe();
-            startBtn.classList.add('ready');
-        }
-
-        window.startApp = function() {
-            document.getElementById('overlay').style.opacity = 0;
-            setTimeout(() => document.getElementById('overlay').remove(), 800);
-            
-            initThree();
-            
-            // --- 修复：音乐播放 ---
-            const audioEl = document.getElementById('bg-music');
-            if (audioEl) {
-                audioEl.volume = 0.5;
-                // 必须在点击事件中触发，否则浏览器会拦截
-                audioEl.play().catch(e => {
-                    console.log("Music play failed (probably file missing):", e);
-                });
-            }
+    <script>
+        // --- 配置与常量 ---
+        const KEYS = {
+            START: 'tyc_start_v3', 
+            SPECIAL: 'tyc_special_days',
+            DIARY: 'tyc_diary_entries_v1' // New key for diary
+        };
+        const DURATION_YEARS = 10;
+        const DAY_SIZE = 12;
+        const GAP = 3;
+        const COL_WIDTH = DAY_SIZE + GAP;
+        
+        let state = {
+            startDate: null,
+            targetDate: null,
+            todayDateStr: null, 
+            specialDays: new Set(),
+            diaryEntries: {}, // New state for diary: { "YYYY-MM-DD": "content" }
+            totalDays: 0,
+            daysPassed: 0
         };
 
-        function initThree() {
-            const container = document.getElementById('canvas-container');
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x020202);
-            scene.fog = new THREE.Fog(0x020202, 1000, 4000);
+        // Modal specific state
+        let currentModalDateKey = null;
 
-            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 10000);
-            camera.position.set(0, 200, 1800);
-
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            container.appendChild(renderer.domElement);
-
-            const pmremGenerator = new THREE.PMREMGenerator(renderer);
-            scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
-
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
-            scene.add(ambientLight);
-            const spotLight = new THREE.SpotLight(0xffd700, 500);
-            spotLight.position.set(800, 1500, 800);
-            spotLight.castShadow = true;
-            spotLight.shadow.mapSize.width = 2048; spotLight.shadow.mapSize.height = 2048;
-            scene.add(spotLight);
-            const rimLight = new THREE.SpotLight(0x4169E1, 800);
-            rimLight.position.set(-800, 1000, -800);
-            scene.add(rimLight);
-
-            const geometryMirror = new THREE.CircleGeometry(2000, 64);
-            const groundMirror = new Reflector(geometryMirror, {
-                clipBias: 0.003, textureWidth: window.innerWidth, textureHeight: window.innerHeight, color: 0x333333
-            });
-            groundMirror.position.y = -CONFIG.treeHeight / 2 - 50;
-            groundMirror.rotateX(-Math.PI / 2);
-            scene.add(groundMirror);
-
-            scene.add(group);
-
-            const renderPass = new RenderPass(scene, camera);
-            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-            bloomPass.threshold = 0.6; bloomPass.strength = 0.8; bloomPass.radius = 0.5;
-            composer = new EffectComposer(renderer);
-            composer.addPass(renderPass);
-            composer.addPass(bloomPass);
-
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true; controls.autoRotate = true; controls.autoRotateSpeed = 1.0;
-            controls.maxPolarAngle = Math.PI / 2 - 0.05;
-
-            window.addEventListener('resize', onWindowResize);
-            generateParticles();
-            animate();
-            transform(targets.tree, 2000);
+        // --- 初始化 ---
+        function init() {
+            loadData();
+            calculateDates();
+            renderYears(); 
+            updateUI();
+            setupTooltip();
         }
 
-        function generateParticles() {
-            const matGeneric = new THREE.MeshPhysicalMaterial({ metalness: 0.9, roughness: 0.1, clearcoat: 1.0 });
-            const geoBox = new THREE.BoxGeometry(1,1,1);
-            const geoSphere = new THREE.SphereGeometry(1, 16, 16);
-            
-            const topStar = new THREE.Mesh(new THREE.OctahedronGeometry(40), new THREE.MeshStandardMaterial({
-                color: 0xFFD700, emissive: 0xFFD700, emissiveIntensity: 2.0
-            }));
-            topStar.position.y = CONFIG.treeHeight / 2 + 60;
-            group.add(topStar);
-            objects.push(topStar);
-            targets.tree.push({position: topStar.position.clone(), rotation: topStar.rotation.clone()});
-            targets.scatter.push({position: new THREE.Vector3(0, 800, 0), rotation: topStar.rotation.clone()});
-
-            for (let i = 0; i < CONFIG.particleCount; i++) {
-                let mesh, isPhoto = false;
-                // 使用加载好的纹理
-                if (textures.length > 0 && i % 30 === 0) {
-                    const tex = textures[i % textures.length];
-                    const aspect = tex.image ? (tex.image.width / tex.image.height) : 1;
-                    mesh = new THREE.Mesh(new THREE.PlaneGeometry(60 * aspect, 60), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
-                    mesh.userData = { isPhoto: true }; isPhoto = true;
-                } else if (i % 25 === 0) {
-                    const tex = createEmojiTexture(CONFIG.emojis[Math.floor(Math.random() * CONFIG.emojis.length)]);
-                    mesh = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide }));
-                } else {
-                    const mat = matGeneric.clone(); mat.color.setHex(CONFIG.colors[Math.floor(Math.random() * CONFIG.colors.length)]);
-                    mesh = new THREE.Mesh(Math.random()>0.5?geoBox:geoSphere, mat);
-                    const s = 10 + Math.random() * 20; mesh.scale.set(s,s,s);
-                }
-                mesh.userData.phase = Math.random() * Math.PI * 2;
-                group.add(mesh);
-                objects.push(mesh);
-
-                // Tree Target
-                const hNorm = i / CONFIG.particleCount;
-                const y = -CONFIG.treeHeight/2 + hNorm * CONFIG.treeHeight;
-                const r = (1 - hNorm) * CONFIG.treeRadius * (0.9 + Math.random()*0.2);
-                const angle = i * 2.5;
-                const targetTree = new THREE.Object3D();
-                targetTree.position.set(Math.cos(angle)*(r+(isPhoto?20:0)), y, Math.sin(angle)*(r+(isPhoto?20:0)));
-                if (isPhoto) { targetTree.lookAt(0, y, 0); targetTree.rotateY(Math.PI); }
-                else targetTree.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3);
-                targets.tree.push(targetTree);
-
-                // Scatter Target
-                const targetScatter = new THREE.Object3D();
-                const phi = Math.acos( -1 + ( 2 * i ) / CONFIG.particleCount );
-                const theta = Math.sqrt( CONFIG.particleCount * Math.PI ) * phi;
-                targetScatter.position.setFromSphericalCoords( 800 + Math.random() * 800, phi, theta );
-                if (isPhoto) { targetScatter.lookAt(0,0,0); targetScatter.rotateY(Math.PI); }
-                else targetScatter.rotation.copy(mesh.rotation);
-                targets.scatter.push(targetScatter);
-            }
-        }
-
-        function transform(targetData, duration) {
-            TWEEN.removeAll();
-            objects.forEach((obj, i) => {
-                if(i >= targetData.length) return;
-                const target = targetData[i];
-                obj.userData.basePos = target.position.clone();
-                new TWEEN.Tween(obj.position).to({x: target.position.x, y: target.position.y, z: target.position.z}, Math.random() * duration + duration).easing(TWEEN.Easing.Exponential.InOut).start();
-                new TWEEN.Tween(obj.rotation).to({x: target.rotation.x, y: target.rotation.y, z: target.rotation.z}, Math.random() * duration + duration).easing(TWEEN.Easing.Cubic.InOut).start();
-            });
-        }
-
-        function zoomRandomPhoto() {
-            const photos = objects.filter(o => o.userData.isPhoto);
-            if (photos.length === 0) return;
-            const photo = photos[Math.floor(Math.random() * photos.length)];
-            const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-            const targetPos = camera.position.clone().add(dir.multiplyScalar(300));
-            new TWEEN.Tween(photo.position).to(targetPos, 1200).easing(TWEEN.Easing.Back.Out).start();
-            new TWEEN.Tween(photo.scale).to({x: 6, y: 6, z: 6}, 1000).start();
-        }
-
-        // --- MediaPipe Hand Tracking ---
-        let lastGestureTime = 0;
-        function initMediaPipe() {
-            const videoElement = document.getElementById('video-input');
-            const canvasElement = document.getElementById('output-canvas');
-            const canvasCtx = canvasElement.getContext('2d');
-            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-            
-            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-            hands.onResults((results) => {
-                canvasCtx.save();
-                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                    const landmarks = results.multiHandLandmarks[0];
-                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
-                    drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 1, radius: 3});
-                    detectGesture(landmarks);
-                } else {
-                    statusDisplay.innerText = "NO HAND DETECTED"; statusDisplay.style.color = "#888"; camContainer.classList.remove('active');
-                }
-                canvasCtx.restore();
-            });
-
-            const cameraUtils = new Camera(videoElement, {
-                onFrame: async () => { await hands.send({image: videoElement}); },
-                width: 320, height: 240
-            });
-            cameraUtils.start().catch(err => {
-                console.error(err); statusDisplay.innerText = "CAMERA ERROR";
-            });
-        }
-
-        function detectGesture(landmarks) {
-            const dist = (i1, i2) => {
-                const p1 = landmarks[i1], p2 = landmarks[i2];
-                return Math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2);
-            };
-            const tipsToWrist = (dist(8, 0) + dist(12, 0) + dist(16, 0) + dist(20, 0)) / 4;
-            const pinchDist = dist(4, 8);
-            let gesture = "";
-            let now = Date.now();
-
-            if (tipsToWrist < 0.25) gesture = "FIST (TREE)";
-            else if (pinchDist < 0.05 && tipsToWrist > 0.3) gesture = "PINCH (ZOOM)";
-            else if (tipsToWrist > 0.4) gesture = "OPEN (SCATTER)";
-
-            if (gesture) {
-                statusDisplay.innerText = gesture; statusDisplay.style.color = "#00FF00"; camContainer.classList.add('active');
+        function loadData() {
+            // Load Start Date
+            const storedStart = localStorage.getItem(KEYS.START);
+            if (storedStart) {
+                state.startDate = new Date(parseInt(storedStart));
             } else {
-                statusDisplay.innerText = "HAND DETECTED..."; statusDisplay.style.color = "#FFF"; camContainer.classList.remove('active');
+                startNewCycle();
             }
-            
-            if (gesture && (now - lastGestureTime > 1500)) {
-                if (gesture.includes("FIST") && currentMode !== 'TREE') {
-                    currentMode = 'TREE'; transform(targets.tree, 2000); lastGestureTime = now;
-                } else if (gesture.includes("OPEN") && currentMode !== 'SCATTER') {
-                    currentMode = 'SCATTER'; transform(targets.scatter, 2000); lastGestureTime = now;
-                } else if (gesture.includes("PINCH") && currentMode === 'SCATTER') {
-                    currentMode = 'ZOOM'; zoomRandomPhoto(); lastGestureTime = now;
+
+            // Load Special Days
+            const storedSpecial = localStorage.getItem(KEYS.SPECIAL);
+            if (storedSpecial) {
+                try {
+                    const arr = JSON.parse(storedSpecial);
+                    state.specialDays = new Set(arr);
+                } catch (e) {
+                    state.specialDays = new Set();
+                }
+            }
+
+            // Load Diary Entries
+            const storedDiary = localStorage.getItem(KEYS.DIARY);
+            if (storedDiary) {
+                try {
+                    state.diaryEntries = JSON.parse(storedDiary);
+                } catch (e) {
+                    state.diaryEntries = {};
                 }
             }
         }
 
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            composer.setSize(window.innerWidth, window.innerHeight);
+        function startNewCycle() {
+            state.startDate = new Date();
+            state.startDate.setHours(0,0,0,0);
+            localStorage.setItem(KEYS.START, state.startDate.getTime());
+            state.specialDays.clear();
+            state.diaryEntries = {};
+            saveSpecialDays();
+            saveDiary();
         }
 
-        function animate() {
-            requestAnimationFrame(animate);
-            TWEEN.update();
-            controls.update();
-            const time = Date.now() * 0.001;
-            if (currentMode === 'TREE') group.rotation.y = time * 0.1;
-            else group.rotation.y += 0.0005;
-            if (currentMode === 'TREE') {
-                objects.forEach(obj => {
-                    if (obj.userData.basePos && !obj.userData.isPhoto) {
-                        obj.position.y = obj.userData.basePos.y + Math.sin(time * 2 + obj.userData.phase) * 5;
+        function calculateDates() {
+            state.targetDate = new Date(state.startDate);
+            state.targetDate.setFullYear(state.targetDate.getFullYear() + DURATION_YEARS);
+
+            const diffTime = Math.abs(state.targetDate - state.startDate);
+            state.totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+            const now = new Date();
+            now.setHours(0,0,0,0);
+            state.todayDateStr = formatDateKey(now);
+            
+            const diffPassed = now - state.startDate;
+            state.daysPassed = Math.floor(diffPassed / (1000 * 60 * 60 * 24));
+        }
+
+        function formatDateKey(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function saveSpecialDays() {
+            localStorage.setItem(KEYS.SPECIAL, JSON.stringify(Array.from(state.specialDays)));
+        }
+
+        function saveDiary() {
+            localStorage.setItem(KEYS.DIARY, JSON.stringify(state.diaryEntries));
+        }
+
+        // --- 核心渲染 ---
+        function renderYears() {
+            const container = document.getElementById('years-container');
+            container.innerHTML = '';
+            
+            let cursorDate = new Date(state.startDate);
+            let globalDayIndex = 0;
+            const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+            for (let y = 0; y < DURATION_YEARS; y++) {
+                const yearStart = new Date(cursorDate);
+                const currentYearNum = yearStart.getFullYear();
+                let nextYearDate = new Date(yearStart);
+                nextYearDate.setFullYear(nextYearDate.getFullYear() + 1);
+                
+                const yearCard = document.createElement('div');
+                yearCard.className = 'year-card';
+                
+                const yearHeader = `
+                    <div class="flex justify-between items-end mb-6 border-b border-gray-100 pb-3">
+                        <h2 class="text-xl font-bold text-gray-900">Year ${y + 1} <span class="text-gray-400 text-base font-medium ml-2">(${currentYearNum})</span></h2>
+                    </div>
+                `;
+                
+                // Month Labels Logic
+                const startDayOfWeek = yearStart.getDay();
+                let monthLabelHTML = '';
+                for (let m = 0; m < 12; m++) {
+                    const firstDayOfMonth = new Date(yearStart.getFullYear(), yearStart.getMonth() + m, 1);
+                    if (firstDayOfMonth >= nextYearDate) break;
+                    const dayDiff = Math.round((firstDayOfMonth - yearStart) / (1000 * 60 * 60 * 24));
+                    const colIndex = Math.floor((dayDiff + startDayOfWeek) / 7);
+                    const leftPos = colIndex * COL_WIDTH;
+                    monthLabelHTML += `<div class="month-label" style="left: ${leftPos}px">${monthNames[firstDayOfMonth.getMonth()]}</div>`;
+                }
+
+                const monthLabelsContainer = `<div class="month-labels">${monthLabelHTML}</div>`;
+                const gridWrapper = document.createElement('div');
+                gridWrapper.className = 'flex overflow-x-auto no-scrollbar pb-2';
+                const weekLabels = `
+                    <div class="week-labels">
+                        <div class="day-label"></div><div class="day-label">Mon</div><div class="day-label"></div><div class="day-label">Wed</div><div class="day-label"></div><div class="day-label">Fri</div><div class="day-label"></div>
+                    </div>`;
+
+                const heatMap = document.createElement('div');
+                heatMap.className = 'heatmap-grid';
+
+                for (let i = 0; i < startDayOfWeek; i++) {
+                    const emptyBox = document.createElement('div');
+                    emptyBox.style.width = '12px';
+                    emptyBox.style.height = '12px';
+                    heatMap.appendChild(emptyBox);
+                }
+
+                while (cursorDate < nextYearDate) {
+                    const dateKey = formatDateKey(cursorDate);
+                    const dayBox = document.createElement('div');
+                    let classes = 'day-box ';
+
+                    // Status Styles
+                    if (globalDayIndex < state.daysPassed) {
+                        classes += 'day-past ';
+                    } else if (globalDayIndex === state.daysPassed) {
+                        classes += 'day-today ';
+                    } else {
+                        classes += 'day-future ';
                     }
-                });
+
+                    // Feature Styles
+                    if (state.specialDays.has(dateKey)) classes += 'day-special ';
+                    if (state.diaryEntries[dateKey]) classes += 'day-has-diary ';
+
+                    // Border Logic
+                    const currentMonth = cursorDate.getMonth();
+                    const prevWeekDate = new Date(cursorDate); prevWeekDate.setDate(cursorDate.getDate() - 7);
+                    if (prevWeekDate >= yearStart && prevWeekDate.getMonth() !== currentMonth) classes += 'month-border-left ';
+                    
+                    const yesterday = new Date(cursorDate); yesterday.setDate(cursorDate.getDate() - 1);
+                    if (cursorDate.getDay() !== 0 && yesterday.getMonth() !== currentMonth) classes += 'month-border-top ';
+                    
+                    const tomorrow = new Date(cursorDate); tomorrow.setDate(cursorDate.getDate() + 1);
+                    if (cursorDate.getDay() !== 6 && tomorrow.getMonth() !== currentMonth) classes += 'month-border-bottom ';
+
+                    dayBox.className = classes;
+                    dayBox.dataset.date = cursorDate.toLocaleDateString('zh-CN');
+                    dayBox.dataset.day = globalDayIndex + 1;
+                    dayBox.id = `day-${dateKey}`;
+                    
+                    // Add Click Event for Diary
+                    dayBox.onclick = () => openDiaryModal(dateKey, globalDayIndex + 1);
+                    
+                    heatMap.appendChild(dayBox);
+                    cursorDate.setDate(cursorDate.getDate() + 1);
+                    globalDayIndex++;
+                }
+
+                gridWrapper.innerHTML = weekLabels;
+                gridWrapper.appendChild(heatMap);
+                yearCard.innerHTML = yearHeader + monthLabelsContainer;
+                yearCard.appendChild(gridWrapper);
+                container.appendChild(yearCard);
             }
-            composer.render();
+            
+            setTimeout(() => {
+                const todayEl = document.querySelector('.day-today');
+                if (todayEl) todayEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
         }
 
-        preloadAssets();
+        // --- Modal & Diary Logic ---
+        function openDiaryModal(dateKey, dayIndex) {
+            currentModalDateKey = dateKey;
+            
+            // Populate Modal
+            document.getElementById('modal-date-title').textContent = dateKey;
+            document.getElementById('modal-day-info').textContent = `Day ${dayIndex || '?'}`;
+            
+            // Get existing entry or empty
+            const content = state.diaryEntries[dateKey] || '';
+            document.getElementById('diary-input').value = content;
+            
+            // Show
+            const modal = document.getElementById('diary-modal');
+            modal.classList.add('active');
+            
+            // Focus textarea
+            setTimeout(() => document.getElementById('diary-input').focus(), 100);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('diary-modal');
+            modal.classList.remove('active');
+            currentModalDateKey = null;
+        }
+
+        function saveDiaryEntry() {
+            if (!currentModalDateKey) return;
+            
+            const content = document.getElementById('diary-input').value.trim();
+            
+            if (content) {
+                state.diaryEntries[currentModalDateKey] = content;
+            } else {
+                delete state.diaryEntries[currentModalDateKey]; // Remove if empty
+            }
+            
+            saveDiary();
+            
+            // Update UI class for this specific day
+            const dayEl = document.getElementById(`day-${currentModalDateKey}`);
+            if (dayEl) {
+                if (content) {
+                    dayEl.classList.add('day-has-diary');
+                } else {
+                    dayEl.classList.remove('day-has-diary');
+                }
+            }
+            
+            closeModal();
+            createConfetti(); // Visual feedback
+        }
+
+        // --- UI Updates ---
+        function updateUI() {
+            document.getElementById('current-day-num').textContent = state.daysPassed + 1;
+            document.getElementById('total-days-num').textContent = state.totalDays;
+            document.getElementById('date-range-display').textContent = 
+                `${state.startDate.toLocaleDateString('zh-CN')} — ${state.targetDate.toLocaleDateString('zh-CN')}`;
+            
+            const pct = (state.daysPassed / state.totalDays) * 100;
+            document.getElementById('percentage-display').textContent = pct.toFixed(2) + '%';
+            document.getElementById('progress-bar-visual').style.width = pct + '%';
+
+            const btn = document.getElementById('star-btn');
+            if (state.specialDays.has(state.todayDateStr)) {
+                btn.innerHTML = '<i class="fas fa-check"></i> 已标记';
+                btn.classList.add('bg-orange-400'); 
+            } else {
+                btn.innerHTML = '<i class="fas fa-star text-xs"></i> 标记今天为纪念日';
+                btn.classList.remove('bg-orange-400');
+            }
+        }
+
+        function toggleTodaySpecial() {
+            if (state.specialDays.has(state.todayDateStr)) {
+                state.specialDays.delete(state.todayDateStr);
+            } else {
+                state.specialDays.add(state.todayDateStr);
+                createConfetti();
+            }
+            saveSpecialDays();
+            
+            const todayEl = document.getElementById(`day-${state.todayDateStr}`);
+            if (todayEl) {
+                todayEl.classList.toggle('day-special');
+            }
+            updateUI();
+        }
+
+        function setupTooltip() {
+            const container = document.getElementById('years-container');
+            const tooltip = document.getElementById('tooltip');
+
+            container.addEventListener('mouseover', (e) => {
+                if (e.target.classList.contains('day-box')) {
+                    const date = e.target.dataset.date;
+                    const dayNum = e.target.dataset.day;
+                    const dateKey = e.target.id.replace('day-', '');
+                    if(!date) return;
+
+                    let tipContent = `<span style="color:#a1a1aa; font-size:10px;">DAY ${dayNum}</span><br>${date}`;
+                    
+                    // Show note indicator in tooltip if exists
+                    if (state.diaryEntries[dateKey]) {
+                        tipContent += `<br><span style="color:#8b5cf6; font-size:10px; margin-top:4px; display:inline-block;"><i class="fas fa-sticky-note"></i> Has Note</span>`;
+                    }
+
+                    tooltip.innerHTML = tipContent;
+                    tooltip.style.display = 'block';
+                }
+            });
+
+            container.addEventListener('mousemove', (e) => {
+                const x = e.clientX + 15;
+                const y = e.clientY + 15;
+                const maxX = window.innerWidth - tooltip.offsetWidth - 20;
+                const finalX = Math.min(x, maxX);
+                tooltip.style.left = finalX + 'px';
+                tooltip.style.top = y + 'px';
+            });
+
+            container.addEventListener('mouseout', () => {
+                tooltip.style.display = 'none';
+            });
+        }
+
+        function createConfetti() {
+            const colors = ['#ff9500', '#0071e3', '#ff3b30', '#4cd964'];
+            for(let i=0; i<30; i++) {
+                const el = document.createElement('div');
+                el.style.position = 'fixed';
+                el.style.left = '50%';
+                el.style.top = '50%';
+                el.style.width = '6px';
+                el.style.height = '6px';
+                el.style.backgroundColor = colors[Math.floor(Math.random()*colors.length)];
+                el.style.borderRadius = '50%';
+                el.style.zIndex = '1000';
+                el.style.pointerEvents = 'none';
+                document.body.appendChild(el);
+
+                const angle = Math.random() * Math.PI * 2;
+                const velocity = 4 + Math.random() * 6;
+                const dx = Math.cos(angle) * velocity;
+                const dy = Math.sin(angle) * velocity;
+                let x = 0, y = 0, opacity = 1;
+
+                const anim = setInterval(() => {
+                    x += dx; y += dy + 0.5; opacity -= 0.04;
+                    el.style.transform = `translate(${x}px, ${y}px)`;
+                    el.style.opacity = opacity;
+                    if(opacity <= 0) { clearInterval(anim); el.remove(); }
+                }, 20);
+            }
+        }
+
+        // Close modal on outside click
+        document.getElementById('diary-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'diary-modal') closeModal();
+        });
+
+        init();
     </script>
 </body>
-
 </html>
