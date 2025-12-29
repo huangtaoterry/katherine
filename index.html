@@ -3,14 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>10年 - 每日可视化</title>
+    <title>10年 - 云端共享版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 全局变量
+        window.firebaseApp = null;
+        window.db = null;
+        window.auth = null;
+        window.docRef = null;
+
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        
+        // 初始化 Firebase
+        window.firebaseApp = initializeApp(firebaseConfig);
+        window.auth = getAuth(window.firebaseApp);
+        window.db = getFirestore(window.firebaseApp);
+        
+        // 路径结构：artifacts/{appId}/public/data/{collectionName}/{documentId}
+        window.docRef = doc(window.db, 'artifacts', appId, 'public', 'data', 'countdown_shared', 'timeline_data');
+
+        async function initApp() {
+            // 设置超时保护
+            const timeoutId = setTimeout(() => {
+                const loading = document.getElementById('loading-overlay');
+                if(loading) {
+                    loading.innerHTML = '<div class="text-red-500">Connection Timeout. Loading local mode...</div>';
+                    setTimeout(() => { 
+                         loading.style.opacity = '0'; 
+                         setTimeout(() => loading.remove(), 500);
+                         if(!window.state.startDate) window.startNewCycle(false);
+                    }, 1000);
+                }
+            }, 8000);
+
+            try {
+                // --- 修复：优先使用 Custom Token 登录 ---
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(window.auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(window.auth);
+                }
+                
+                // 使用 onAuthStateChanged 确保 Auth 状态完全就绪
+                onAuthStateChanged(window.auth, (user) => {
+                    if (user) {
+                        // 2. 监听数据变化
+                        onSnapshot(window.docRef, (docSnap) => {
+                            clearTimeout(timeoutId);
+
+                            if (docSnap.exists()) {
+                                const data = docSnap.data();
+                                console.log("Data loaded from cloud:", data);
+                                window.updateStateFromCloud(data);
+                            } else {
+                                console.log("No shared data found, initializing default...");
+                                window.startNewCycle(false); 
+                            }
+                            
+                            const loading = document.getElementById('loading-overlay');
+                            if(loading) {
+                                loading.style.opacity = '0';
+                                setTimeout(() => loading.remove(), 500);
+                            }
+                        }, (error) => {
+                            console.error("Sync error:", error);
+                            // 只有是权限错误时才不移除遮罩，方便调试，或者是静默失败转本地
+                            if (error.code !== 'permission-denied') {
+                                clearTimeout(timeoutId);
+                            }
+                        });
+                    }
+                });
+
+            } catch (error) {
+                console.error("Auth error:", error);
+                clearTimeout(timeoutId);
+                document.getElementById('loading-overlay').innerHTML = `<div class="text-red-500">Auth Error: ${error.message}</div>`;
+            }
+        }
+
+        initApp();
+    </script>
+
     <style>
         /* Apple 风格字体栈 */
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "PingFang SC", "Noto Sans SC", sans-serif;
-            background-color: #f5f5f7; /* Apple 浅灰背景 */
+            background-color: #f5f5f7;
             color: #1d1d1f;
             -webkit-font-smoothing: antialiased;
         }
@@ -19,14 +106,8 @@
             font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
         }
 
-        /* 隐藏滚动条但保留功能 */
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        .no-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
         /* 卡片样式 */
         .year-card {
@@ -73,15 +154,8 @@
         }
 
         .day-special { background-color: #ff9500; }
-        
-        /* 有日记的标记：底部紫色边框 */
-        .day-has-diary {
-            border-bottom: 2px solid #8b5cf6 !important; /* Purple border */
-        }
-        /* 如果既是Special又有Diary，确保都可见 */
-        .day-special.day-has-diary {
-            box-shadow: 0 0 0 1px #8b5cf6;
-        }
+        .day-has-diary { border-bottom: 2px solid #8b5cf6 !important; }
+        .day-special.day-has-diary { box-shadow: 0 0 0 1px #8b5cf6; }
 
         .day-box:hover {
             transform: scale(1.8);
@@ -90,12 +164,11 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
 
-        /* 月份边界虚线 */
         .month-border-top { border-top: 1px dashed #a1a1aa; margin-top: -1px; }
         .month-border-bottom { border-bottom: 1px dashed #a1a1aa; }
         .month-border-left { border-left: 1px dashed #a1a1aa; margin-left: -1px; }
 
-        /* Tooltip */
+        /* Tooltip & Modal */
         .custom-tooltip {
             position: absolute;
             background: rgba(29, 29, 31, 0.95);
@@ -112,90 +185,61 @@
             backdrop-filter: blur(4px);
         }
 
-        /* 弹窗 Modal */
         .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(0, 0, 0, 0.4);
             backdrop-filter: blur(4px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            opacity: 0;
-            pointer-events: none;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000; opacity: 0; pointer-events: none;
             transition: opacity 0.3s ease;
         }
-        .modal-overlay.active {
-            opacity: 1;
-            pointer-events: auto;
-        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
         .modal-card {
-            background: white;
-            width: 90%;
-            max-width: 400px;
-            border-radius: 20px;
-            padding: 24px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-            transform: scale(0.95);
-            transition: transform 0.3s ease;
+            background: white; width: 90%; max-width: 400px;
+            border-radius: 20px; padding: 24px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            transform: scale(0.95); transition: transform 0.3s ease;
         }
-        .modal-overlay.active .modal-card {
-            transform: scale(1);
-        }
+        .modal-overlay.active .modal-card { transform: scale(1); }
 
-        /* 按钮风格 */
         .apple-btn {
-            background-color: #0071e3;
-            color: white;
-            border-radius: 980px;
-            padding: 10px 24px;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s;
-            border: none;
+            background-color: #0071e3; color: white;
+            border-radius: 980px; padding: 10px 24px;
+            font-size: 14px; font-weight: 500;
+            transition: all 0.2s; border: none;
             box-shadow: 0 2px 5px rgba(0, 113, 227, 0.2);
         }
         .apple-btn:hover {
-            background-color: #0077ed;
-            transform: translateY(-1px);
+            background-color: #0077ed; transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0, 113, 227, 0.4);
         }
         
-        /* 布局调整 */
         .week-labels {
-            display: grid;
-            grid-template-rows: repeat(7, 12px);
-            gap: 3px;
-            margin-right: 8px;
-            text-align: right;
-            padding-top: 2px;
+            display: grid; grid-template-rows: repeat(7, 12px); gap: 3px;
+            margin-right: 8px; text-align: right; padding-top: 2px;
         }
-        .day-label {
-            font-size: 9px;
-            color: #86868b;
-            line-height: 12px;
-            height: 12px;
-        }
-        .month-labels {
-            position: relative;
-            height: 20px;
-            margin-bottom: 4px;
-        }
+        .day-label { font-size: 9px; color: #86868b; line-height: 12px; height: 12px; }
+        .month-labels { position: relative; height: 20px; margin-bottom: 4px; }
         .month-label {
-            position: absolute;
-            font-size: 11px;
-            color: #86868b;
-            top: 0;
-            font-family: -apple-system, sans-serif;
-            font-weight: 500;
+            position: absolute; font-size: 11px; color: #86868b; top: 0;
+            font-family: -apple-system, sans-serif; font-weight: 500;
+        }
+        
+        #loading-overlay {
+            position: fixed; inset: 0; background: #f5f5f7; z-index: 2000; 
+            display: flex; justify-content: center; align-items: center;
+            transition: opacity 0.5s;
         }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center">
+
+    <div id="loading-overlay">
+        <div class="flex flex-col items-center gap-4">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400"></div>
+            <div class="text-gray-500 font-medium">Syncing Cloud Data...</div>
+        </div>
+    </div>
 
     <!-- 提示框 -->
     <div id="tooltip" class="custom-tooltip"></div>
@@ -211,11 +255,13 @@
             </div>
             <p id="modal-day-info" class="text-xs text-gray-500 mb-4">Day X of Journey</p>
             
-            <textarea id="diary-input" class="w-full h-32 p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#0071e3] focus:border-transparent outline-none resize-none text-sm bg-gray-50 text-gray-800" placeholder="Write something about this day..."></textarea>
+            <textarea id="diary-input" class="w-full h-32 p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#0071e3] focus:border-transparent outline-none resize-none text-sm bg-gray-50 text-gray-800" placeholder="Write something about this day... (Requires Password)"></textarea>
             
             <div class="flex justify-end gap-3 mt-6">
                 <button onclick="closeModal()" class="px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition">Cancel</button>
-                <button onclick="saveDiaryEntry()" class="px-6 py-2 text-sm bg-[#0071e3] text-white rounded-lg hover:bg-[#0077ed] transition shadow-md font-medium">Save Note</button>
+                <button onclick="handleSaveDiary()" class="px-6 py-2 text-sm bg-[#0071e3] text-white rounded-lg hover:bg-[#0077ed] transition shadow-md font-medium">
+                    <i class="fas fa-lock text-xs mr-1 opacity-70"></i> Save Note
+                </button>
             </div>
         </div>
     </div>
@@ -225,11 +271,11 @@
         <div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-end">
             <div class="pb-1">
                 <h1 class="text-2xl font-bold tracking-tight text-gray-900">10 Years Journey</h1>
-                <p class="text-xs text-gray-500 mt-1 font-medium" id="date-range-display">Loading...</p>
+                <p class="text-xs text-gray-500 mt-1 font-medium" id="date-range-display">Connecting...</p>
             </div>
             
             <div class="flex items-end gap-10">
-                <!-- 进度模块 -->
+                <!-- 进度 -->
                 <div class="text-right flex flex-col items-end">
                     <div class="text-[11px] text-gray-400 uppercase font-bold tracking-wide mb-1">Progress</div>
                     <div class="flex items-baseline gap-2">
@@ -240,7 +286,7 @@
                     </div>
                 </div>
 
-                <!-- 天数模块 -->
+                <!-- 天数 -->
                 <div class="text-right flex flex-col items-end">
                     <div class="text-[11px] text-gray-400 uppercase font-bold tracking-wide mb-1">Current Day</div>
                     <div class="font-bold mono-font text-3xl text-gray-800 tracking-tighter">
@@ -254,10 +300,8 @@
         </div>
     </nav>
 
-    <!-- 主内容区域 -->
+    <!-- 主内容 -->
     <main class="w-full max-w-6xl px-6 py-8 flex-1">
-        
-        <!-- 图例 -->
         <div class="flex justify-end gap-6 text-xs text-gray-500 mb-8 px-2 font-medium">
             <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-[2px] bg-[#ebedf0] border border-dashed border-gray-300"></div> Future</div>
             <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-[2px] bg-[#4cd964] opacity-70"></div> Past</div>
@@ -266,114 +310,123 @@
             <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-[2px] border-b-2 border-[#8b5cf6]"></div> Note</div>
         </div>
 
-        <!-- 年份容器 -->
-        <div id="years-container">
-            <!-- JS 动态生成 -->
-        </div>
-
+        <div id="years-container"></div>
     </main>
 
-    <!-- 底部控制栏 -->
+    <!-- 底部 -->
     <footer class="w-full bg-white border-t border-gray-200 py-8 mt-auto">
         <div class="max-w-6xl mx-auto px-6 flex justify-between items-center">
             <div class="text-xs text-gray-500 max-w-2xl leading-relaxed italic font-serif">
-                "Dearest Katherine: I promise that no matter what changes over the next ten years, I will keep choosing you—steadily, faithfully, and with all my heart—until the day we finally stay together."
+                "Dearest Katherine: We devote these ten years to our families. When the children are grown, I will marry you, and we will walk the rest of our lives together."
             </div>
             
-            <button onclick="toggleTodaySpecial()" id="star-btn" class="apple-btn flex items-center gap-2 shrink-0 ml-4">
-                <i class="fas fa-star text-xs"></i> 标记今天为纪念日
+            <button onclick="handleToggleTodaySpecial()" id="star-btn" class="apple-btn flex items-center gap-2 shrink-0 ml-4">
+                <i class="fas fa-lock text-xs opacity-70"></i> <span id="star-btn-text">标记今天</span>
             </button>
         </div>
     </footer>
 
-    <script>
-        // --- 配置与常量 ---
-        const KEYS = {
-            START: 'tyc_start_v3', 
-            SPECIAL: 'tyc_special_days',
-            DIARY: 'tyc_diary_entries_v1' // New key for diary
-        };
-        const DURATION_YEARS = 10;
-        const DAY_SIZE = 12;
-        const GAP = 3;
-        const COL_WIDTH = DAY_SIZE + GAP;
+    <script type="module">
+        import { setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        let state = {
+        const DURATION_YEARS = 10;
+        const COL_WIDTH = 15;
+        const EDIT_PASSWORD = "20251229";
+        
+        // 全局状态 (暴露给window以便普通函数访问)
+        window.state = {
             startDate: null,
             targetDate: null,
             todayDateStr: null, 
             specialDays: new Set(),
-            diaryEntries: {}, // New state for diary: { "YYYY-MM-DD": "content" }
+            diaryEntries: {},
             totalDays: 0,
             daysPassed: 0
         };
 
-        // Modal specific state
         let currentModalDateKey = null;
 
-        // --- 初始化 ---
-        function init() {
-            loadData();
-            calculateDates();
-            renderYears(); 
-            updateUI();
-            setupTooltip();
-        }
+        // 初始化默认周期 (本地)
+        window.startNewCycle = function(shouldSave = false) {
+            const now = new Date();
+            now.setHours(0,0,0,0);
+            
+            const newState = {
+                startDate: now.getTime(),
+                specialDays: [],
+                diaryEntries: {}
+            };
+            
+            window.updateStateFromCloud(newState);
+            
+            if (shouldSave && window.docRef) {
+                window.saveToCloud(newState);
+            }
+        };
 
-        function loadData() {
-            // Load Start Date
-            const storedStart = localStorage.getItem(KEYS.START);
-            if (storedStart) {
-                state.startDate = new Date(parseInt(storedStart));
-            } else {
-                startNewCycle();
+        // 处理云端数据更新
+        window.updateStateFromCloud = function(data) {
+            if (!data.startDate) {
+                // 如果云端数据是空的或损坏的
+                console.warn("Cloud data invalid, using defaults");
+                window.startNewCycle(false);
+                return;
             }
 
-            // Load Special Days
-            const storedSpecial = localStorage.getItem(KEYS.SPECIAL);
-            if (storedSpecial) {
-                try {
-                    const arr = JSON.parse(storedSpecial);
-                    state.specialDays = new Set(arr);
-                } catch (e) {
-                    state.specialDays = new Set();
-                }
-            }
+            window.state.startDate = new Date(data.startDate);
+            window.state.specialDays = new Set(data.specialDays || []);
+            window.state.diaryEntries = data.diaryEntries || {};
 
-            // Load Diary Entries
-            const storedDiary = localStorage.getItem(KEYS.DIARY);
-            if (storedDiary) {
-                try {
-                    state.diaryEntries = JSON.parse(storedDiary);
-                } catch (e) {
-                    state.diaryEntries = {};
-                }
+            window.calculateDates();
+            window.renderYears(); 
+            window.updateUI();
+        }
+
+        // 保存到云端
+        window.saveToCloud = async function(newStatePartial) {
+            if (!window.docRef) {
+                alert("Cannot save: Database not connected.");
+                return;
+            }
+            
+            const dataToSave = {
+                startDate: window.state.startDate.getTime(),
+                specialDays: Array.from(window.state.specialDays),
+                diaryEntries: window.state.diaryEntries,
+                ...newStatePartial
+            };
+
+            try {
+                await setDoc(window.docRef, dataToSave, { merge: true });
+                console.log("Saved to cloud successfully.");
+            } catch (e) {
+                console.error("Save failed:", e);
+                alert("Failed to save to cloud: " + e.message);
             }
         }
 
-        function startNewCycle() {
-            state.startDate = new Date();
-            state.startDate.setHours(0,0,0,0);
-            localStorage.setItem(KEYS.START, state.startDate.getTime());
-            state.specialDays.clear();
-            state.diaryEntries = {};
-            saveSpecialDays();
-            saveDiary();
+        function verifyPassword() {
+            const input = prompt("Security Check\nPlease enter the password to edit:", "");
+            if (input === EDIT_PASSWORD) return true;
+            if (input !== null) alert("Incorrect password.");
+            return false;
         }
 
-        function calculateDates() {
-            state.targetDate = new Date(state.startDate);
-            state.targetDate.setFullYear(state.targetDate.getFullYear() + DURATION_YEARS);
+        // 计算日期
+        window.calculateDates = function() {
+            const s = window.state;
+            s.targetDate = new Date(s.startDate);
+            s.targetDate.setFullYear(s.targetDate.getFullYear() + DURATION_YEARS);
 
-            const diffTime = Math.abs(state.targetDate - state.startDate);
-            state.totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            const diffTime = Math.abs(s.targetDate - s.startDate);
+            s.totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
 
             const now = new Date();
             now.setHours(0,0,0,0);
-            state.todayDateStr = formatDateKey(now);
+            s.todayDateStr = formatDateKey(now);
             
-            const diffPassed = now - state.startDate;
-            state.daysPassed = Math.floor(diffPassed / (1000 * 60 * 60 * 24));
+            const diffPassed = now - s.startDate;
+            s.daysPassed = Math.floor(diffPassed / (1000 * 60 * 60 * 24));
         }
 
         function formatDateKey(date) {
@@ -383,26 +436,17 @@
             return `${year}-${month}-${day}`;
         }
 
-        function saveSpecialDays() {
-            localStorage.setItem(KEYS.SPECIAL, JSON.stringify(Array.from(state.specialDays)));
-        }
-
-        function saveDiary() {
-            localStorage.setItem(KEYS.DIARY, JSON.stringify(state.diaryEntries));
-        }
-
-        // --- 核心渲染 ---
-        function renderYears() {
+        // 渲染年份
+        window.renderYears = function() {
             const container = document.getElementById('years-container');
             container.innerHTML = '';
             
-            let cursorDate = new Date(state.startDate);
+            let cursorDate = new Date(window.state.startDate);
             let globalDayIndex = 0;
             const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
             for (let y = 0; y < DURATION_YEARS; y++) {
                 const yearStart = new Date(cursorDate);
-                const currentYearNum = yearStart.getFullYear();
                 let nextYearDate = new Date(yearStart);
                 nextYearDate.setFullYear(nextYearDate.getFullYear() + 1);
                 
@@ -411,11 +455,11 @@
                 
                 const yearHeader = `
                     <div class="flex justify-between items-end mb-6 border-b border-gray-100 pb-3">
-                        <h2 class="text-xl font-bold text-gray-900">Year ${y + 1} <span class="text-gray-400 text-base font-medium ml-2">(${currentYearNum})</span></h2>
+                        <h2 class="text-xl font-bold text-gray-900">Year ${y + 1} <span class="text-gray-400 text-base font-medium ml-2">(${yearStart.getFullYear()})</span></h2>
                     </div>
                 `;
                 
-                // Month Labels Logic
+                // Month Labels
                 const startDayOfWeek = yearStart.getDay();
                 let monthLabelHTML = '';
                 for (let m = 0; m < 12; m++) {
@@ -427,43 +471,32 @@
                     monthLabelHTML += `<div class="month-label" style="left: ${leftPos}px">${monthNames[firstDayOfMonth.getMonth()]}</div>`;
                 }
 
-                const monthLabelsContainer = `<div class="month-labels">${monthLabelHTML}</div>`;
                 const gridWrapper = document.createElement('div');
                 gridWrapper.className = 'flex overflow-x-auto no-scrollbar pb-2';
-                const weekLabels = `
-                    <div class="week-labels">
-                        <div class="day-label"></div><div class="day-label">Mon</div><div class="day-label"></div><div class="day-label">Wed</div><div class="day-label"></div><div class="day-label">Fri</div><div class="day-label"></div>
-                    </div>`;
-
+                
                 const heatMap = document.createElement('div');
                 heatMap.className = 'heatmap-grid';
 
+                // Padding
                 for (let i = 0; i < startDayOfWeek; i++) {
                     const emptyBox = document.createElement('div');
-                    emptyBox.style.width = '12px';
-                    emptyBox.style.height = '12px';
+                    emptyBox.style.width = '12px'; emptyBox.style.height = '12px';
                     heatMap.appendChild(emptyBox);
                 }
 
+                // Days
                 while (cursorDate < nextYearDate) {
                     const dateKey = formatDateKey(cursorDate);
                     const dayBox = document.createElement('div');
                     let classes = 'day-box ';
 
-                    // Status Styles
-                    if (globalDayIndex < state.daysPassed) {
-                        classes += 'day-past ';
-                    } else if (globalDayIndex === state.daysPassed) {
-                        classes += 'day-today ';
-                    } else {
-                        classes += 'day-future ';
-                    }
+                    if (globalDayIndex < window.state.daysPassed) classes += 'day-past ';
+                    else if (globalDayIndex === window.state.daysPassed) classes += 'day-today ';
+                    else classes += 'day-future ';
 
-                    // Feature Styles
-                    if (state.specialDays.has(dateKey)) classes += 'day-special ';
-                    if (state.diaryEntries[dateKey]) classes += 'day-has-diary ';
+                    if (window.state.specialDays.has(dateKey)) classes += 'day-special ';
+                    if (window.state.diaryEntries[dateKey]) classes += 'day-has-diary ';
 
-                    // Border Logic
                     const currentMonth = cursorDate.getMonth();
                     const prevWeekDate = new Date(cursorDate); prevWeekDate.setDate(cursorDate.getDate() - 7);
                     if (prevWeekDate >= yearStart && prevWeekDate.getMonth() !== currentMonth) classes += 'month-border-left ';
@@ -479,190 +512,125 @@
                     dayBox.dataset.day = globalDayIndex + 1;
                     dayBox.id = `day-${dateKey}`;
                     
-                    // Add Click Event for Diary
-                    dayBox.onclick = () => openDiaryModal(dateKey, globalDayIndex + 1);
+                    // Closure capture
+                    const dKey = dateKey;
+                    const dIdx = globalDayIndex + 1;
+                    dayBox.onclick = () => window.openDiaryModal(dKey, dIdx);
                     
                     heatMap.appendChild(dayBox);
                     cursorDate.setDate(cursorDate.getDate() + 1);
                     globalDayIndex++;
                 }
 
-                gridWrapper.innerHTML = weekLabels;
+                gridWrapper.innerHTML = `
+                    <div class="week-labels">
+                        <div class="day-label"></div><div class="day-label">Mon</div><div class="day-label"></div><div class="day-label">Wed</div><div class="day-label"></div><div class="day-label">Fri</div><div class="day-label"></div>
+                    </div>`;
                 gridWrapper.appendChild(heatMap);
-                yearCard.innerHTML = yearHeader + monthLabelsContainer;
+                
+                yearCard.innerHTML = yearHeader + `<div class="month-labels">${monthLabelHTML}</div>`;
                 yearCard.appendChild(gridWrapper);
                 container.appendChild(yearCard);
             }
             
-            setTimeout(() => {
-                const todayEl = document.querySelector('.day-today');
-                if (todayEl) todayEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 300);
+            window.setupTooltip();
         }
 
-        // --- Modal & Diary Logic ---
-        function openDiaryModal(dateKey, dayIndex) {
+        // UI Interactions
+        window.openDiaryModal = function(dateKey, dayIndex) {
             currentModalDateKey = dateKey;
-            
-            // Populate Modal
             document.getElementById('modal-date-title').textContent = dateKey;
             document.getElementById('modal-day-info').textContent = `Day ${dayIndex || '?'}`;
-            
-            // Get existing entry or empty
-            const content = state.diaryEntries[dateKey] || '';
-            document.getElementById('diary-input').value = content;
-            
-            // Show
-            const modal = document.getElementById('diary-modal');
-            modal.classList.add('active');
-            
-            // Focus textarea
+            document.getElementById('diary-input').value = window.state.diaryEntries[dateKey] || '';
+            document.getElementById('diary-modal').classList.add('active');
             setTimeout(() => document.getElementById('diary-input').focus(), 100);
         }
 
-        function closeModal() {
-            const modal = document.getElementById('diary-modal');
-            modal.classList.remove('active');
+        window.closeModal = function() {
+            document.getElementById('diary-modal').classList.remove('active');
             currentModalDateKey = null;
         }
 
-        function saveDiaryEntry() {
+        window.handleSaveDiary = function() {
             if (!currentModalDateKey) return;
-            
+            if (!verifyPassword()) return;
+
             const content = document.getElementById('diary-input').value.trim();
+            const newEntries = { ...window.state.diaryEntries };
             
-            if (content) {
-                state.diaryEntries[currentModalDateKey] = content;
-            } else {
-                delete state.diaryEntries[currentModalDateKey]; // Remove if empty
-            }
+            if (content) newEntries[currentModalDateKey] = content;
+            else delete newEntries[currentModalDateKey];
             
-            saveDiary();
-            
-            // Update UI class for this specific day
-            const dayEl = document.getElementById(`day-${currentModalDateKey}`);
-            if (dayEl) {
-                if (content) {
-                    dayEl.classList.add('day-has-diary');
-                } else {
-                    dayEl.classList.remove('day-has-diary');
-                }
-            }
-            
-            closeModal();
-            createConfetti(); // Visual feedback
+            window.state.diaryEntries = newEntries;
+            window.saveToCloud({ diaryEntries: newEntries });
+            window.closeModal();
+            window.renderYears(); // Re-render to show indicators
         }
 
-        // --- UI Updates ---
-        function updateUI() {
-            document.getElementById('current-day-num').textContent = state.daysPassed + 1;
-            document.getElementById('total-days-num').textContent = state.totalDays;
+        window.handleToggleTodaySpecial = function() {
+            if (!window.state.todayDateStr) return;
+            if (!verifyPassword()) return;
+
+            const newSpecialDays = new Set(window.state.specialDays);
+            if (newSpecialDays.has(window.state.todayDateStr)) newSpecialDays.delete(window.state.todayDateStr);
+            else newSpecialDays.add(window.state.todayDateStr);
+
+            window.state.specialDays = newSpecialDays;
+            window.saveToCloud({ specialDays: Array.from(newSpecialDays) });
+        }
+
+        window.updateUI = function() {
+            if(!window.state.startDate) return;
+            document.getElementById('current-day-num').textContent = window.state.daysPassed + 1;
+            document.getElementById('total-days-num').textContent = window.state.totalDays;
             document.getElementById('date-range-display').textContent = 
-                `${state.startDate.toLocaleDateString('zh-CN')} — ${state.targetDate.toLocaleDateString('zh-CN')}`;
+                `${window.state.startDate.toLocaleDateString('zh-CN')} — ${window.state.targetDate.toLocaleDateString('zh-CN')}`;
             
-            const pct = (state.daysPassed / state.totalDays) * 100;
+            let pct = (window.state.daysPassed / window.state.totalDays) * 100;
+            if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+
             document.getElementById('percentage-display').textContent = pct.toFixed(2) + '%';
             document.getElementById('progress-bar-visual').style.width = pct + '%';
 
             const btn = document.getElementById('star-btn');
-            if (state.specialDays.has(state.todayDateStr)) {
-                btn.innerHTML = '<i class="fas fa-check"></i> 已标记';
+            if (window.state.specialDays.has(window.state.todayDateStr)) {
+                btn.innerHTML = '<i class="fas fa-lock text-xs opacity-70"></i> 已标记';
                 btn.classList.add('bg-orange-400'); 
             } else {
-                btn.innerHTML = '<i class="fas fa-star text-xs"></i> 标记今天为纪念日';
+                btn.innerHTML = '<i class="fas fa-lock text-xs opacity-70"></i> 标记今天';
                 btn.classList.remove('bg-orange-400');
             }
         }
 
-        function toggleTodaySpecial() {
-            if (state.specialDays.has(state.todayDateStr)) {
-                state.specialDays.delete(state.todayDateStr);
-            } else {
-                state.specialDays.add(state.todayDateStr);
-                createConfetti();
-            }
-            saveSpecialDays();
-            
-            const todayEl = document.getElementById(`day-${state.todayDateStr}`);
-            if (todayEl) {
-                todayEl.classList.toggle('day-special');
-            }
-            updateUI();
-        }
-
-        function setupTooltip() {
+        window.setupTooltip = function() {
             const container = document.getElementById('years-container');
             const tooltip = document.getElementById('tooltip');
 
-            container.addEventListener('mouseover', (e) => {
+            container.onmouseover = (e) => {
                 if (e.target.classList.contains('day-box')) {
                     const date = e.target.dataset.date;
                     const dayNum = e.target.dataset.day;
                     const dateKey = e.target.id.replace('day-', '');
-                    if(!date) return;
-
-                    let tipContent = `<span style="color:#a1a1aa; font-size:10px;">DAY ${dayNum}</span><br>${date}`;
                     
-                    // Show note indicator in tooltip if exists
-                    if (state.diaryEntries[dateKey]) {
+                    let tipContent = `<span style="color:#a1a1aa; font-size:10px;">DAY ${dayNum}</span><br>${date}`;
+                    if (window.state.diaryEntries[dateKey]) {
                         tipContent += `<br><span style="color:#8b5cf6; font-size:10px; margin-top:4px; display:inline-block;"><i class="fas fa-sticky-note"></i> Has Note</span>`;
                     }
-
                     tooltip.innerHTML = tipContent;
                     tooltip.style.display = 'block';
                 }
-            });
-
-            container.addEventListener('mousemove', (e) => {
+            };
+            container.onmousemove = (e) => {
                 const x = e.clientX + 15;
                 const y = e.clientY + 15;
                 const maxX = window.innerWidth - tooltip.offsetWidth - 20;
-                const finalX = Math.min(x, maxX);
-                tooltip.style.left = finalX + 'px';
+                tooltip.style.left = Math.min(x, maxX) + 'px';
                 tooltip.style.top = y + 'px';
-            });
-
-            container.addEventListener('mouseout', () => {
-                tooltip.style.display = 'none';
-            });
+            };
+            container.onmouseout = (e) => {
+                if (e.target.classList.contains('day-box')) tooltip.style.display = 'none';
+            };
         }
-
-        function createConfetti() {
-            const colors = ['#ff9500', '#0071e3', '#ff3b30', '#4cd964'];
-            for(let i=0; i<30; i++) {
-                const el = document.createElement('div');
-                el.style.position = 'fixed';
-                el.style.left = '50%';
-                el.style.top = '50%';
-                el.style.width = '6px';
-                el.style.height = '6px';
-                el.style.backgroundColor = colors[Math.floor(Math.random()*colors.length)];
-                el.style.borderRadius = '50%';
-                el.style.zIndex = '1000';
-                el.style.pointerEvents = 'none';
-                document.body.appendChild(el);
-
-                const angle = Math.random() * Math.PI * 2;
-                const velocity = 4 + Math.random() * 6;
-                const dx = Math.cos(angle) * velocity;
-                const dy = Math.sin(angle) * velocity;
-                let x = 0, y = 0, opacity = 1;
-
-                const anim = setInterval(() => {
-                    x += dx; y += dy + 0.5; opacity -= 0.04;
-                    el.style.transform = `translate(${x}px, ${y}px)`;
-                    el.style.opacity = opacity;
-                    if(opacity <= 0) { clearInterval(anim); el.remove(); }
-                }, 20);
-            }
-        }
-
-        // Close modal on outside click
-        document.getElementById('diary-modal').addEventListener('click', (e) => {
-            if (e.target.id === 'diary-modal') closeModal();
-        });
-
-        init();
     </script>
 </body>
 </html>
